@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-10-20 10:55:27, updated by Pierre Rouleau>
+;; Time-stamp: <2021-10-20 11:10:35, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -143,7 +143,7 @@
             (while (not (eobp))
               (let ((this-day (timelog-read-date)))
                 (unless (string= last-day this-day)
-                  (incf total-days)
+                  (cl-incf total-days)
                   (setq last-day this-day)))
               (cl-destructuring-bind (start-time project)
                   (timelog-read-time-and-project)
@@ -169,7 +169,7 @@
             (while (not (eobp))
               (let ((this-day (timelog-read-date)))
                 (unless (string= current-day this-day)
-                  (incf total-days)
+                  (cl-incf total-days)
                   (setq current-day this-day)))
               (cl-destructuring-bind (start-time project)
                   (timelog-read-time-and-project)
