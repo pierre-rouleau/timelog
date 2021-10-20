@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-10-20 10:40:50, updated by Pierre Rouleau>
+;; Time-stamp: <2021-10-20 10:55:27, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -34,19 +34,20 @@
     (buffer-substring-no-properties (+ 2 (point)) (+ 12 (point)))))
 
 (defun timelog-read-time (&optional use-current-time-if-eobp)
-  (if (and (eobp) use-current-time-if-eobp)
+  (if (and (eobp)
+           use-current-time-if-eobp)
       (timelog-current-time)
     (progn
       (forward-char 15)
       (let ((hour (current-word nil t)))
-	(forward-word 1)
-	(let ((minute (current-word nil t)))
-	  (forward-word 1)
-	  (let ((second (current-word nil t)))
-	    (+
-	     (* (string-to-number hour) 3600)
-	     (* (string-to-number minute) 60)
-	     (string-to-number second)) ))))))
+        (forward-word 1)
+        (let ((minute (current-word nil t)))
+          (forward-word 1)
+          (let ((second (current-word nil t)))
+            (+
+             (* (string-to-number hour) 3600)
+             (* (string-to-number minute) 60)
+             (string-to-number second))))))))
 
 (defun timelog-read-time-and-project ()
   (beginning-of-line)
@@ -56,7 +57,7 @@
 
 (defun timelog-seconds-to-time (total-seconds)
   (let ((hours (/ total-seconds 3600))
-	(%hours (% total-seconds 3600)))
+        (%hours (% total-seconds 3600)))
     (format "%d:%02d:%02d" hours (/ %hours 60) (% %hours 60))))
 
 (defun timelog-current-time ()
@@ -66,8 +67,8 @@
 (defun add-to-time-list (project time-spent time-list)
   (let ((previous (assoc project time-list)))
     (if previous
-	(cons (cons project (+ time-spent (cdr previous)))
-	      (remove previous time-list))
+        (cons (cons project (+ time-spent (cdr previous)))
+              (remove previous time-list))
       (cons (cons project time-spent) time-list))))
 
 (defun timelog-narrow-to-date-range (first-date last-date) ;; YYYY/MM/DD
@@ -93,91 +94,91 @@
   (let ((dates (list)))
     (with-current-buffer (find-file-noselect timeclock-file t)
       (save-excursion
-	(when (timelog-narrow-to-date-range first-date last-date)
-	  (let ((current-date ""))
-	    (while (not (eobp))
-	      (let ((this-date (timelog-read-date)))
-		(unless (string= current-date this-date)
-		  (push this-date dates)
-		  (setq current-date this-date)))
-	      (beginning-of-line 2))))))
+        (when (timelog-narrow-to-date-range first-date last-date)
+          (let ((current-date ""))
+            (while (not (eobp))
+              (let ((this-date (timelog-read-date)))
+                (unless (string= current-date this-date)
+                  (push this-date dates)
+                  (setq current-date this-date)))
+              (beginning-of-line 2))))))
     (reverse dates)))
 
 
 (defun timelog-do-summarize-day (date-string) ;; YYYY/MM/DD
   (let ((time-list (list))
-	(first-start-time)
-	(last-stop-time)
-	(extant-timelog-buffer (find-buffer-visiting timeclock-file)))
+        (first-start-time)
+        (last-stop-time)
+        (extant-timelog-buffer (find-buffer-visiting timeclock-file)))
     (with-current-buffer (find-file-noselect timeclock-file t)
       (save-excursion
-	(save-restriction
-	  (when (timelog-narrow-to-date date-string)
-	    (setq first-start-time (timelog-read-time))
-	    (while (not (eobp))
-	      (cl-destructuring-bind (start-time project)
-		  (timelog-read-time-and-project)
-		(beginning-of-line 2)
-		(let ((stop-time (timelog-read-time t)))
-		  (setq time-list
-			(add-to-time-list
-			 project (- stop-time start-time) time-list))
-		  (setq last-stop-time stop-time)))
-	      (beginning-of-line 2) ) )))
+        (save-restriction
+          (when (timelog-narrow-to-date date-string)
+            (setq first-start-time (timelog-read-time))
+            (while (not (eobp))
+              (cl-destructuring-bind (start-time project)
+                  (timelog-read-time-and-project)
+                (beginning-of-line 2)
+                (let ((stop-time (timelog-read-time t)))
+                  (setq time-list
+                        (add-to-time-list
+                         project (- stop-time start-time) time-list))
+                  (setq last-stop-time stop-time)))
+              (beginning-of-line 2)))))
       (unless extant-timelog-buffer (kill-buffer (current-buffer))))
     (setq time-list (sort time-list #'(lambda (a b) (> (cdr a) (cdr b)))))
     (list first-start-time last-stop-time time-list)))
 
 (defun timelog-do-summarize-month (month-string) ;; YYYY/MM
   (let ((time-list (list))
-	(first-day "")
-	(last-day "")
-	(total-days 0)
-	(extant-timelog-buffer (find-buffer-visiting timeclock-file)))
+        (first-day "")
+        (last-day "")
+        (total-days 0)
+        (extant-timelog-buffer (find-buffer-visiting timeclock-file)))
     (with-current-buffer (find-file-noselect timeclock-file t)
       (save-excursion
-	(save-restriction
-	  (when (timelog-narrow-to-month month-string)
-	    (setq first-day (timelog-read-date))
-	    (while (not (eobp))
-	      (let ((this-day (timelog-read-date)))
-		(unless (string= last-day this-day)
-		  (incf total-days)
-		  (setq last-day this-day)))
-	      (cl-destructuring-bind (start-time project)
-		  (timelog-read-time-and-project)
-		(beginning-of-line 2)
-		(let ((stop-time (timelog-read-time t)))
-		  (setq time-list
-			(add-to-time-list
-			 project (- stop-time start-time) time-list))))
-	      (beginning-of-line 2) ) )))
+        (save-restriction
+          (when (timelog-narrow-to-month month-string)
+            (setq first-day (timelog-read-date))
+            (while (not (eobp))
+              (let ((this-day (timelog-read-date)))
+                (unless (string= last-day this-day)
+                  (incf total-days)
+                  (setq last-day this-day)))
+              (cl-destructuring-bind (start-time project)
+                  (timelog-read-time-and-project)
+                (beginning-of-line 2)
+                (let ((stop-time (timelog-read-time t)))
+                  (setq time-list
+                        (add-to-time-list
+                         project (- stop-time start-time) time-list))))
+              (beginning-of-line 2)))))
       (unless extant-timelog-buffer (kill-buffer (current-buffer))))
     (setq time-list (sort time-list #'(lambda (a b) (> (cdr a) (cdr b)))))
     (list first-day last-day total-days time-list)))
 
 (defun timelog-do-summarize-range (first-day last-day) ;; date-strings
   (let ((time-list (list))
-	(current-day "")
-	(total-days 0)
-	(extant-timelog-buffer (find-buffer-visiting timeclock-file)))
+        (current-day "")
+        (total-days 0)
+        (extant-timelog-buffer (find-buffer-visiting timeclock-file)))
     (with-current-buffer (find-file-noselect timeclock-file t)
       (save-excursion
-	(save-restriction
-	  (when (timelog-narrow-to-date-range first-day last-day)
-	    (while (not (eobp))
-	      (let ((this-day (timelog-read-date)))
-		(unless (string= current-day this-day)
-		  (incf total-days)
-		  (setq current-day this-day)))
-	      (cl-destructuring-bind (start-time project)
-		  (timelog-read-time-and-project)
-		(beginning-of-line 2)
-		(let ((stop-time (timelog-read-time t)))
-		  (setq time-list
-			(add-to-time-list
-			 project (- stop-time start-time) time-list))))
-	      (beginning-of-line 2) ) )))
+        (save-restriction
+          (when (timelog-narrow-to-date-range first-day last-day)
+            (while (not (eobp))
+              (let ((this-day (timelog-read-date)))
+                (unless (string= current-day this-day)
+                  (incf total-days)
+                  (setq current-day this-day)))
+              (cl-destructuring-bind (start-time project)
+                  (timelog-read-time-and-project)
+                (beginning-of-line 2)
+                (let ((stop-time (timelog-read-time t)))
+                  (setq time-list
+                        (add-to-time-list
+                         project (- stop-time start-time) time-list))))
+              (beginning-of-line 2)))))
       (unless extant-timelog-buffer (kill-buffer (current-buffer))))
     (setq time-list (sort time-list #'(lambda (a b) (> (cdr a) (cdr b)))))
     (list total-days time-list)))
@@ -190,12 +191,12 @@
    (format " Time spent  Project\n")
    (format " ----------  -------\n")
    (cl-reduce #'(lambda (table project-and-time)
-	       (cl-destructuring-bind (project . time) project-and-time
-		 (concat
-		  (format "%11s  %s\n" (timelog-seconds-to-time time) project)
-		  table)))
-	   (reverse time-list)
-	   :initial-value "\n")
+                  (cl-destructuring-bind (project . time) project-and-time
+                    (concat
+                     (format "%11s  %s\n" (timelog-seconds-to-time time) project)
+                     table)))
+              (reverse time-list)
+              :initial-value "\n")
    (format "      Total\n")
    (format " ----------\n")
    (format "%11s\n" (timelog-seconds-to-time (time-list-sum time-list)))))
@@ -204,9 +205,9 @@
   (concat
    (format "________________________________\n")
    (format "Report for time spent %s, between %s and %s.\n\n"
-	   date-string
-	   (timelog-seconds-to-time start-time)
-	   (timelog-seconds-to-time stop-time))
+           date-string
+           (timelog-seconds-to-time start-time)
+           (timelog-seconds-to-time stop-time))
    (generate-time-table time-list)
    (format "________________________________\n")))
 
@@ -214,7 +215,7 @@
   (concat
    (format "________________________________\n")
    (format "Report for time spent between %s and %s, total of %d days.\n\n"
-	   first-day last-day total-days)
+           first-day last-day total-days)
    (generate-time-table time-list)
    (format "________________________________\n")))
 
@@ -222,8 +223,8 @@
   (if (= 6 (length date-string))
       (concat (substring date-string 0 4) "/" (substring date-string 4))
     (concat (substring date-string 0 4) "/"
-	    (substring date-string 4 6) "/"
-	    (substring date-string 6)) ))
+            (substring date-string 4 6) "/"
+            (substring date-string 6))))
 
 (defun timelog-summarize-day (date-string) ;; YYYYMMDD
   (interactive "sDate [YYYYMMDD]: ")
@@ -231,9 +232,9 @@
   (cl-destructuring-bind (start-time stop-time projects)
       (timelog-do-summarize-day date-string)
     (if (null projects)
-	(message "No entries for date %s in %s" date-string timeclock-file)
+        (message "No entries for date %s in %s" date-string timeclock-file)
       (insert (timelog-generate-day-report
-	       date-string start-time stop-time projects)) )))
+               date-string start-time stop-time projects)))))
 
 (defun timelog-summarize-today ()
   (interactive)
@@ -247,9 +248,9 @@
   (cl-destructuring-bind (start-date stop-date total-days projects)
       (timelog-do-summarize-month month-string)
     (if (null projects)
-	(message "No entries for month %s in %s" month-string timeclock-file)
+        (message "No entries for month %s in %s" month-string timeclock-file)
       (insert (timelog-generate-month-report
-	       start-date stop-date total-days projects)) )))
+               start-date stop-date total-days projects)))))
 
 (defun timelog-summarize-range (first-day last-day) ;; date-strings
   (interactive "sFirst date [YYYYMMDD]: \nsLast date [YYYYMMDD]: ")
@@ -279,25 +280,24 @@
   (let ((extant-timelog-buffer (find-buffer-visiting timeclock-file)))
     (with-current-buffer (find-file-noselect timeclock-file t)
       (save-excursion
-	(save-restriction
-	  (widen)
-	  (goto-char (point-max))
-	  (let ((last-line (buffer-substring-no-properties
-			    (line-beginning-position 0) (1- (point)))))
-	  (message last-line)
-	  )))
-    (unless extant-timelog-buffer (kill-buffer (current-buffer))))))
+        (save-restriction
+          (widen)
+          (goto-char (point-max))
+          (let ((last-line (buffer-substring-no-properties
+                            (line-beginning-position 0) (1- (point)))))
+            (message last-line))))
+      (unless extant-timelog-buffer (kill-buffer (current-buffer))))))
 
 (defun timelog-workday-elapsed ()
   (interactive)
   (cl-destructuring-bind (_s _m _h day month year . ignored) (decode-time)
     (let ((date-string (format "%d/%02d/%02d" year month day)))
       (cl-destructuring-bind (_start-time _stop-time projects)
-	  (timelog-do-summarize-day date-string)
-	(if (null projects)
-	    (message "No entries for date %s in %s" date-string timeclock-file)
-	  (message "Total time worked today: %s" (timelog-seconds-to-time
-						  (time-list-sum projects))) )))))
+          (timelog-do-summarize-day date-string)
+        (if (null projects)
+            (message "No entries for date %s in %s" date-string timeclock-file)
+          (message "Total time worked today: %s" (timelog-seconds-to-time
+                                                  (time-list-sum projects))))))))
 
 ;;; --------------------------------------------------------------------------
 (provide 'timelog)
