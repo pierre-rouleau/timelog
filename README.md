@@ -15,7 +15,7 @@ timelog is integrated inside [PEL](https://github.com/pierre-rouleau/pel#readme)
 
 # Installation
 
-There is currently no support for Elpa complaint packages like MELPA.
+There is currently no support for Elpa-compliant packages like MELPA.
 
 To install copy the file timelog.el into a directory that is in your Emacs load-path
 and add the following code inside your initialization:
