@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-10-22 15:44:03, updated by Pierre Rouleau>
+;; Time-stamp: <2021-10-22 18:22:25, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -38,13 +38,11 @@
 ;;   day.  The new code detects the situation and compute tine for an opened
 ;;   ended project at the end of a day as if it was ending at midnight.  This
 ;;   way a single day report includes that period properly.
+;; - To ensure that all periods are properly counted the file content is
+;;   corrected by `timelog--fix-midnight-crossings' before any report is
+;;   created.  This inserts project termination and start over midnight to
+;;   prevent all possibilities of duration computation errors.
 ;;
-;; Remaining limitation:
-;; - Project activity that begins before the first day of a report and ends at
-;;   the beginning of that first day is *not* counted in the various reports.
-;;   The available work-around:
-;;   - Edit the timelog file and insert 2 lines that terminates a project at
-;;     23:59:59 of day-1 and starts at 00:0:00 on day 2.  Reload the file.
 ;;
 ;; Code modifications:
 ;; - Renamed internal functions to timelog--SOMETHING
@@ -119,6 +117,11 @@ The choices are:
   (cl-destructuring-bind (seconds minutes hours &rest ignored) (decode-time)
     (+ seconds (* minutes 60) (* hours 3600))))
 
+(defun timelog--current-date ()
+  "Return today's date in \"YYYY/MM/DD\" format."
+  (cl-destructuring-bind (_s _m _h day month year &rest ignored) (decode-time)
+    (format "%4d/%02d/%02d" year month day)))
+
 (defun timelog--add-to-time-list (project start-time stop-time time-list)
   "Return an alist of (project . time-spent) for provided arguments.
 
@@ -192,6 +195,18 @@ Return nil otherwise."
       (save-excursion
         (move-beginning-of-line 1))))
 
+(defun timelog--end-of-day (date-string)
+  "Return end of day in seconds.
+
+If DATE-STRING corresponds to today, return current time in seconds,
+otherwise return 86400, which corresponds to the total number of seconds in
+24 hours.rn time of end of day in seconds.
+If DATE-STRING represents today, return the current time in seconds,
+otherwise return 86400, the equivalent of 24 hours."
+  (if (string= date-string (timelog--current-date))
+      (timelog--current-time)
+    86400))
+
 (defun timelog--do-summarize-day (date-string)
   "Return activity information for date specified by DATE-STRING.
 
@@ -200,11 +215,7 @@ The returned value is a list that includes:
 - The time of day, in seconds, of the first entry for the day.
 - The time of day, in seconds, of the last entry in the day.
 - a list of (project . duration-in-second) cons cells for the activity
-  during the specified day.
-
-LIMITATION: the function ignores any activity that started in the previous day
-            while you were burning the midnight oil.  Note that this activity
-            is taken into account for monthly or day range reports."
+  during the specified day."
   (let ((time-list (list))
         (first-start-time)
         (last-stop-time)
@@ -221,10 +232,10 @@ LIMITATION: the function ignores any activity that started in the previous day
             ;; activity unless we go to the previous line but currently its
             ;; narrowed, so we can't.
             ;; For now just jump to the next time period entry line with
-            ;; `timelog--move-to-first-input-line'.
+            ;; `timelog--move-to-first-input-line' as we minimize the
+            ;; possibility of this to occur because we call
+            ;; `timelog--fix-midnight-crossings' before starting any report.
             ;;
-            ;; TODO: add ability to read the previous
-            ;; line before narrowing the lines for a specific date.
             (timelog--move-to-first-input-line)
             (setq first-start-time (timelog--read-time))
             (while (not (eobp))
@@ -233,8 +244,10 @@ LIMITATION: the function ignores any activity that started in the previous day
                 (setq next-line-found (timelog--to-beginning-of-next-line))
                 (let ((stop-time (if next-line-found
                                      (timelog--read-time t)
-                                   ;; no other lines, stop counting at midnight
-                                   86400)))
+                                   ;; no other lines, stop counting at
+                                   ;; midnight unless it's today: in that case
+                                   ;; count up to the current time
+                                   (timelog--end-of-day date-string))))
                   (setq time-list
                         (timelog--add-to-time-list
                          project start-time stop-time time-list))
@@ -367,10 +380,63 @@ LIMITATION: the function ignores any activity that started in the previous day
     (concat (substring date-string 0 4) "/"
             (substring date-string 4 6) "/"
             (substring date-string 6))))
+;; --
+
+(defconst timelog--in-out-regexp
+  "^i \\([0-9]+/[0-9][0-9]/[0-9][0-9]\\) [0-9][0-9]:[0-9][0-9]:[0-9][0-9] \\(.+\\)
+o \\([0-9]+/[0-9][0-9]/[0-9][0-9]\\) [0-9][0-9]:[0-9][0-9]:[0-9][0-9]"
+  "Regexp to extract the following:
+- group 1: date of the in record
+- group 2: name of the project (taken from the in record)
+- group 3: date of the out record following the in record just before.")
+
+
+(defun timelog--fix-midnight-crossings (&optional verbose)
+  "Fix all midnight crossings in the timelog file.
+
+Insert project end in day 1 and start in day 2.
+Save file and reload it if anything changed.
+Return nil if nothing was fixed, otherwise return the number of
+midnight periods fixed."
+  (let ((fix-count 0)
+        (extant-timelog-buffer (find-buffer-visiting timeclock-file)))
+    (with-current-buffer (find-file-noselect timeclock-file t)
+      (save-excursion
+        (save-restriction
+          (goto-char (point-min))
+          (while (not (eobp))
+            (when (and (re-search-forward timelog--in-out-regexp nil :noerror)
+                       (not (string= (match-string 1)
+                                     (match-string 3))))
+              ;; point is toward end of project input that ends next day
+              ;; Insert 2 new lines the end that project
+              (cl-incf fix-count)
+              (move-beginning-of-line 1)
+              (insert (format "o %s 23:59:59\ni %s 00:00:00 %s\n"
+                              (match-string 1)
+                              (match-string 3)
+                              (match-string 2)))))
+          (if (> fix-count 0)
+              (progn
+                (save-buffer)
+                (timeclock-reread-log)
+                (when verbose
+                  (message "Fixed %d midnight crossing issue%s in %s"
+                           fix-count
+                           (if (> fix-count 1)
+                               "s"
+                             "")
+                           timeclock-file)))
+            (setq fix-count nil))))
+      (unless extant-timelog-buffer (kill-buffer (current-buffer))))
+    fix-count))
+
+;; --
 
 (defun timelog-summarize-day (date-string) ;; YYYYMMDD
   (interactive "sDate [YYYYMMDD]: ")
   (setq date-string (timelog--add-slashes-to-date date-string))
+  (timelog--fix-midnight-crossings :verbose)
   (cl-destructuring-bind (start-time stop-time projects)
       (timelog--do-summarize-day date-string)
     (if (null projects)
@@ -379,10 +445,7 @@ LIMITATION: the function ignores any activity that started in the previous day
                date-string start-time stop-time projects)))))
 
 (defun timelog-summarize-today ()
-  "Print a time log summary for today's activities.
-
-LIMITATION: does not include an activity that started yesterday
-            and finished today."
+  "Print a time log summary for today's activities."
   (interactive)
   (cl-destructuring-bind (_s _m _h day month year . ignored)
       (decode-time)
@@ -391,13 +454,10 @@ LIMITATION: does not include an activity that started yesterday
 (defun timelog-summarize-month (month-string) ;; YYYYMM
   "Print a time log summary for activities done in the specified month.
 
-MONTH-STRING format must be \"YYYYMM\". Prompt if not specified.
-
-LIMITATION: does not include an activity that started the day before
-            the beginning of the specified month and ended the first day of
-            the month."
+MONTH-STRING format must be \"YYYYMM\". Prompt if not specified."
   (interactive "sMonth [YYYYMM]: ")
   (setq month-string (timelog--add-slashes-to-date month-string))
+  (timelog--fix-midnight-crossings :verbose)
   (cl-destructuring-bind (start-date stop-date total-days projects)
       (timelog--do-summarize-month month-string)
     (if (null projects)
@@ -408,13 +468,11 @@ LIMITATION: does not include an activity that started the day before
 (defun timelog-summarize-range (first-day last-day) ;; date-strings
   "Print a time log for the activity in the days in the specified range.
 
-FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format.
-
-LIMITATION: does not include an activity that started the day before
-            the beginning of the first day and ended the first day."
+FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format."
   (interactive "sFirst date [YYYYMMDD]: \nsLast date [YYYYMMDD]: ")
   (setq first-day (timelog--add-slashes-to-date first-day))
   (setq last-day  (timelog--add-slashes-to-date last-day))
+  (timelog--fix-midnight-crossings :verbose)
   (cl-destructuring-bind (total-days projects)
       (timelog--do-summarize-range first-day last-day)
     (if (null projects)
@@ -422,16 +480,13 @@ LIMITATION: does not include an activity that started the day before
       (insert (timelog--generate-month-report first-day last-day total-days projects)))))
 
 (defun timelog-summarize-each-day-in-range (first-day last-day) ;; date-strings
-    "Print a time log for the activity of each days in the specified range.
+  "Print a time log for the activity of each days in the specified range.
 
-FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format.
-
-LIMITATION: does not include an activities that cross midnight in each of the
-            affected days.  If you burn the midnight oil often this is not the
-            best report!"
+FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format."
   (interactive "sFirst date [YYYYMMDD]: \nsLast date [YYYYMMDD]: ")
   (setq first-day (timelog--add-slashes-to-date first-day))
   (setq last-day  (timelog--add-slashes-to-date last-day))
+  (timelog--fix-midnight-crossings :verbose)
   (mapcar
    #'(lambda (summary)
        (cl-destructuring-bind (date-string start stop time-list) summary
@@ -442,6 +497,7 @@ LIMITATION: does not include an activities that cross midnight in each of the
 	   (timelog--get-dates-in-range first-day last-day))))
 
 (defun timelog-current-project ()
+  "Display the last entry in timelog.  It corresponds to the current project."
   (interactive)
   (let ((extant-timelog-buffer (find-buffer-visiting timeclock-file)))
     (with-current-buffer (find-file-noselect timeclock-file t)
@@ -456,6 +512,7 @@ LIMITATION: does not include an activities that cross midnight in each of the
 
 (defun timelog-workday-elapsed ()
   (interactive)
+  (timelog--fix-midnight-crossings :verbose)
   (cl-destructuring-bind (_s _m _h day month year . ignored) (decode-time)
     (let ((date-string (format "%d/%02d/%02d" year month day)))
       (cl-destructuring-bind (_start-time _stop-time projects)

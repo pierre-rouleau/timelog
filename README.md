@@ -69,13 +69,10 @@ This code include the following modification over the original code:
     day.  The new code detects the situation and compute tine for an opened
     ended project at the end of a day as if it was ending at midnight.  This
     way a single day report includes that period properly.
-
-- Remaining limitation:
-  - Project activity that begins before the first day of a report and ends at
-    the beginning of that first day is **not** counted in the various reports.
-    The available work-around:
-    - Edit the timelog file and insert 2 lines that terminates a project at
-      23:59:59 of day-1 and starts at 00:0:00 on day 2.  Reload the file.
+  - To ensure that all periods are properly counted the file content is
+    corrected by `timelog--fix-midnight-crossings` before any report is
+    created.  This inserts project termination and start over midnight to
+    prevent all possibilities of duration computation errors.
 
 - Code modifications:
   - Renamed internal functions to timelog--*SOMETHING*
