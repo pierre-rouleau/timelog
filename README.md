@@ -52,13 +52,15 @@ when the `pel-use-timelog` user-option is turned on.
 This code include the following modification over the original code:
 
 - Additions:
+  - Ability to generate report in CSV format.  Useful to export in spreadsheets.
+    - The CSV format has 3 filled columns with an extra columns to compute
+      duration in the final spreadsheet.  The CSV has a title row which has a
+      title in the fourth column describing the period.
   - timelog customization group:
     - select report format with `timelog-summary-format' which can be the
       original (called visual for lack of a better word, and is the default),
-      and a CSV format.
-  - The CSV format has 3 filled columns with an extra columns to compute
-    duration in the final spreadsheet.  The CSV has a title row which has a
-    title in the fourth column describing the period.
+      and the CSV format.
+
 - Code Fix:
   - The original code did not handle periods crossing midnight, reporting
     negative time duration for those.  The new code is able to handle time
@@ -74,6 +76,9 @@ This code include the following modification over the original code:
     created.  This inserts project termination and start over midnight to
     prevent all possibilities of duration computation errors.
 
+The above fixes allow tracking project periods that cross midnight, so you can
+burn the midnight oil and still track your time properly.
+
 - Code modifications:
   - Renamed internal functions to timelog--*SOMETHING*
   - Added docstrings to several functions but not all (yet).
@@ -81,6 +86,4 @@ This code include the following modification over the original code:
 # Credit
 
 This is mostly the work of [Markus Flambard](https://gist.github.com/flambard/419770#file-timelog-el)
-with some changes to modernize the code, to add ability to generate reports in CSV format
-and to  handle project periods that cross midnight, so you can burn the midnight oil
-and still track your time properly.
+with the additions described above.
