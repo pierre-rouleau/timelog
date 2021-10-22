@@ -47,8 +47,28 @@ Or something similar.
 For the moment, the easiest way is to use PEL, which installs timelog
 when the `pel-use-timelog` user-option is turned on.
 
+# Modifications over original timelog
+
+This code include the following modification over the original code:
+
+- Additions:
+  - timelog customization group:
+    - select report format with `timelog-summary-format' which can be the
+      original (called visual for lack of a better word, and is the default),
+      and a CSV format.
+  - The CSV format has 3 filled columns with an extra columns to compute
+    duration in the final spreadsheet.  The CSV has a title row which has a
+    title in the fourth column describing the period.
+- Code Fix:
+  - The original code did not handle periods crossing midnight, reporting
+    negative time duration for those.  The new code is able to handle time
+    periods that cross over midnight, but only once.  The longest time period
+    supported is therefore 48 hours less 1 second.
+- Code modifications:
+  - Renamed internal functions to timelog--*SOMETHING*
+  - Added docstrings to several functions but not all (yet).
 
 # Credit
 
 This is mostly the work of [Markus Flambard](https://gist.github.com/flambard/419770#file-timelog-el)
-with some changes to modernize the code and add CSV format support.
+with some changes to modernize the code, add CSV format support and support burning the midnight oil.
