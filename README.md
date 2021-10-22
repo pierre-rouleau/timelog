@@ -46,3 +46,9 @@ Or something similar.
 
 For the moment, the easiest way is to use PEL, which installs timelog
 when the `pel-use-timelog` user-option is turned on.
+
+
+# Credit
+
+This is mostly the work of [Markus Flambard](https://gist.github.com/flambard/419770#file-timelog-el)
+with some changes to modernize the code and add CSV format support.
