@@ -81,4 +81,6 @@ This code include the following modification over the original code:
 # Credit
 
 This is mostly the work of [Markus Flambard](https://gist.github.com/flambard/419770#file-timelog-el)
-with some changes to modernize the code, add CSV format support and support burning the midnight oil.
+with some changes to modernize the code, to add ability to generate reports in CSV format
+and to  handle project periods that cross midnight, so you can burn the midnight oil
+and still track your time properly.
