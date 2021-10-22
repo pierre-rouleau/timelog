@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-10-20 11:10:35, updated by Pierre Rouleau>
+;; Time-stamp: <2021-10-21 23:32:39, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -19,6 +19,16 @@
 ;; There was no mention of a license in the original copy, so I'm not putting
 ;; any for the moment.
 ;;
+;; Added:
+;; - timelog customization group:
+;;   - select report format with `timelog-summary-format' which can be the
+;;   original (called visual for lack of a better word, and is the default),
+;;   and a CSV format.
+;; - The CSV format has 3 filled columns with an extra columns to compute
+;;   duration in the final spreadsheet.  The CSV has a title row which has a
+;;   title in the fourth column describing the period.
+
+
 ;;; --------------------------------------------------------------------------
 ;;; Dependencies:
 ;;
@@ -27,6 +37,25 @@
 
 ;;; --------------------------------------------------------------------------
 ;;; Code:
+
+(defgroup timelog nil
+  "Timelog - print summary of time spent on projects."
+  :group 'timeclock)
+
+(defcustom timelog-summary-format nil
+  "Default format of summary reports.
+
+The choices are:
+- visual,  (nil) the default: a line separated ledger report of the
+           time spent per project.
+- csv,    A comma-separated value. Use this to export into spreadsheets."
+  :group 'timelog
+  :type '(choice
+          (const :tag "visual" nil)
+          (const :tag "Comma Separated Value" csv)))
+
+;; --
+
 
 (defun timelog-read-date ()
   (save-excursion
@@ -201,23 +230,48 @@
    (format " ----------\n")
    (format "%11s\n" (timelog-seconds-to-time (time-list-sum time-list)))))
 
-(defun timelog-generate-day-report (date-string start-time stop-time time-list)
-  (concat
-   (format "________________________________\n")
-   (format "Report for time spent %s, between %s and %s.\n\n"
-           date-string
-           (timelog-seconds-to-time start-time)
-           (timelog-seconds-to-time stop-time))
-   (generate-time-table time-list)
-   (format "________________________________\n")))
+(defun generate-time-table-csv (time-list title)
+  "Return a CSV formatted table of activity."
+  (let ((item (length time-list)))
+    (concat
+     (format "item, time (seconds), activity, %s\n" title)
+     (cl-reduce #'(lambda (table project-and-time)
+                    (prog1
+                        (cl-destructuring-bind (project . time) project-and-time
+                          (concat
+                           (format "%4d, %13s , %s\n" item time project)
+                           table))
+                      (setq item (1- item))))
+                (reverse time-list)
+                :initial-value "\n"))))
+
+(defun timelog-generate-day-report (date-string
+                                    start-time stop-time
+                                    time-list)
+  "Print a day activity report."
+  (let ((title  (format "Report for time spent %s; between %s and %s."
+                        date-string
+                        (timelog-seconds-to-time start-time)
+                        (timelog-seconds-to-time stop-time))))
+    (cond ((eq timelog-summary-format 'csv)
+           (generate-time-table-csv time-list title))
+          (t
+           (concat
+            (format "________________________________\n%s\n\n" title)
+            (generate-time-table time-list)
+            (format "________________________________\n"))))))
 
 (defun timelog-generate-month-report (first-day last-day total-days time-list)
-  (concat
-   (format "________________________________\n")
-   (format "Report for time spent between %s and %s, total of %d days.\n\n"
-           first-day last-day total-days)
-   (generate-time-table time-list)
-   (format "________________________________\n")))
+  "Print a monthly activity report."
+  (let ((title (format "Report for time spent between %s and %s; total of %d days."
+                       first-day last-day total-days)))
+    (cond ((eq timelog-summary-format 'csv)
+           (generate-time-table-csv time-list title))
+          (t
+           (concat
+            (format "________________________________\n%s\n\n" title)
+            (generate-time-table time-list)
+            (format "________________________________\n"))))))
 
 (defun timelog-add-slashes-to-date (date-string)
   (if (= 6 (length date-string))
