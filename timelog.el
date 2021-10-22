@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-10-22 11:48:16, updated by Pierre Rouleau>
+;; Time-stamp: <2021-10-22 15:44:03, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -33,6 +33,18 @@
 ;;   negative time duration for those.  The new code is able to handle time
 ;;   periods that cross over midnight, but only once.  The longest time period
 ;;   supported is therefore 48 hours less 1 second.
+;; - The same issue affected counting time for the last project of the day if
+;;   that project crossed midnight when trying to create a report for a single
+;;   day.  The new code detects the situation and compute tine for an opened
+;;   ended project at the end of a day as if it was ending at midnight.  This
+;;   way a single day report includes that period properly.
+;;
+;; Remaining limitation:
+;; - Project activity that begins before the first day of a report and ends at
+;;   the beginning of that first day is *not* counted in the various reports.
+;;   The available work-around:
+;;   - Edit the timelog file and insert 2 lines that terminates a project at
+;;     23:59:59 of day-1 and starts at 00:0:00 on day 2.  Reload the file.
 ;;
 ;; Code modifications:
 ;; - Renamed internal functions to timelog--SOMETHING
@@ -162,22 +174,67 @@ is a smaller number than START-TIME.
               (beginning-of-line 2))))))
     (reverse dates)))
 
+(defun timelog--move-to-first-input-line ()
+  "Move point to the first line that is a time entry line.
+Leave point at the beginning of a time entry line.
+Return position of date entry if found, nil otherwise."
+  (goto-char (point-min))
+  (prog1
+      (re-search-forward "^i " nil t)
+    (beginning-of-line)))
 
-(defun timelog--do-summarize-day (date-string) ;; YYYY/MM/DD
+(defun timelog--to-beginning-of-next-line ()
+  "Move point to the beginning of next line. Return t on success.
+
+Return nil otherwise."
+  (beginning-of-line 2)
+  (eq (point)
+      (save-excursion
+        (move-beginning-of-line 1))))
+
+(defun timelog--do-summarize-day (date-string)
+  "Return activity information for date specified by DATE-STRING.
+
+DATE-STRING: format must be \"YYYY/MM/DD\".
+The returned value is a list that includes:
+- The time of day, in seconds, of the first entry for the day.
+- The time of day, in seconds, of the last entry in the day.
+- a list of (project . duration-in-second) cons cells for the activity
+  during the specified day.
+
+LIMITATION: the function ignores any activity that started in the previous day
+            while you were burning the midnight oil.  Note that this activity
+            is taken into account for monthly or day range reports."
   (let ((time-list (list))
         (first-start-time)
         (last-stop-time)
+        (next-line-found)
         (extant-timelog-buffer (find-buffer-visiting timeclock-file)))
     (with-current-buffer (find-file-noselect timeclock-file t)
       (save-excursion
         (save-restriction
           (when (timelog--narrow-to-date date-string)
+            ;; some days may start with a time output line because the
+            ;; activity started the previous day. Since timeclock does not
+            ;; guarantee that the end-period report identifies the project,
+            ;; there's no obvious way to determine the project of that
+            ;; activity unless we go to the previous line but currently its
+            ;; narrowed, so we can't.
+            ;; For now just jump to the next time period entry line with
+            ;; `timelog--move-to-first-input-line'.
+            ;;
+            ;; TODO: add ability to read the previous
+            ;; line before narrowing the lines for a specific date.
+            (timelog--move-to-first-input-line)
             (setq first-start-time (timelog--read-time))
             (while (not (eobp))
               (cl-destructuring-bind (start-time project)
                   (timelog--read-time-and-project)
-                (beginning-of-line 2)
-                (let ((stop-time (timelog--read-time t)))
+                (setq next-line-found (timelog--to-beginning-of-next-line))
+                (let ((stop-time (if next-line-found
+                                     (timelog--read-time t)
+                                   ;; no other lines, stop counting at midnight
+                                   86400)))
                   (setq time-list
                         (timelog--add-to-time-list
                          project start-time stop-time time-list))
@@ -187,7 +244,7 @@ is a smaller number than START-TIME.
     (setq time-list (sort time-list #'(lambda (a b) (> (cdr a) (cdr b)))))
     (list first-start-time last-stop-time time-list)))
 
-(defun timelog-do-summarize-month (month-string) ;; YYYY/MM
+(defun timelog--do-summarize-month (month-string) ;; YYYY/MM
   (let ((time-list (list))
         (first-day "")
         (last-day "")
@@ -197,6 +254,7 @@ is a smaller number than START-TIME.
       (save-excursion
         (save-restriction
           (when (timelog--narrow-to-month month-string)
+            (timelog--move-to-first-input-line)
             (setq first-day (timelog--read-date))
             (while (not (eobp))
               (let ((this-day (timelog--read-date)))
@@ -215,7 +273,7 @@ is a smaller number than START-TIME.
     (setq time-list (sort time-list #'(lambda (a b) (> (cdr a) (cdr b)))))
     (list first-day last-day total-days time-list)))
 
-(defun timelog-do-summarize-range (first-day last-day) ;; date-strings
+(defun timelog--do-summarize-range (first-day last-day) ;; date-strings
   (let ((time-list (list))
         (current-day "")
         (total-days 0)
@@ -224,6 +282,7 @@ is a smaller number than START-TIME.
       (save-excursion
         (save-restriction
           (when (timelog--narrow-to-date-range first-day last-day)
+            (timelog--move-to-first-input-line)
             (while (not (eobp))
               (let ((this-day (timelog--read-date)))
                 (unless (string= current-day this-day)
@@ -241,10 +300,10 @@ is a smaller number than START-TIME.
     (setq time-list (sort time-list #'(lambda (a b) (> (cdr a) (cdr b)))))
     (list total-days time-list)))
 
-(defun time-list-sum (time-list)
+(defun timelog--time-list-sum (time-list)
   (cl-reduce #'+ time-list :initial-value 0 :key #'cdr))
 
-(defun generate-time-table (time-list)
+(defun timelog--generate-time-table (time-list)
   (concat
    (format " Time spent  Project\n")
    (format " ----------  -------\n")
@@ -257,9 +316,9 @@ is a smaller number than START-TIME.
               :initial-value "\n")
    (format "      Total\n")
    (format " ----------\n")
-   (format "%11s\n" (timelog--seconds-to-time (time-list-sum time-list)))))
+   (format "%11s\n" (timelog--seconds-to-time (timelog--time-list-sum time-list)))))
 
-(defun generate-time-table-csv (time-list title)
+(defun timelog--generate-time-table-csv (time-list title)
   "Return a CSV formatted table of activity."
   (let ((item (length time-list)))
     (concat
@@ -274,35 +333,35 @@ is a smaller number than START-TIME.
                 (reverse time-list)
                 :initial-value "\n"))))
 
-(defun timelog-generate-day-report (date-string
-                                    start-time stop-time
-                                    time-list)
+(defun timelog--generate-day-report (date-string
+                                     start-time stop-time
+                                     time-list)
   "Print a day activity report."
-  (let ((title  (format "Report for time spent %s; between %s and %s."
-                        date-string
-                        (timelog--seconds-to-time start-time)
-                        (timelog--seconds-to-time stop-time))))
+  (let ((title (format "Report for time spent %s; between %s and %s."
+                       date-string
+                       (timelog--seconds-to-time start-time)
+                       (timelog--seconds-to-time stop-time))))
     (cond ((eq timelog-summary-format 'csv)
-           (generate-time-table-csv time-list title))
+           (timelog--generate-time-table-csv time-list title))
           (t
            (concat
             (format "________________________________\n%s\n\n" title)
-            (generate-time-table time-list)
+            (timelog--generate-time-table time-list)
             (format "________________________________\n"))))))
 
-(defun timelog-generate-month-report (first-day last-day total-days time-list)
+(defun timelog--generate-month-report (first-day last-day total-days time-list)
   "Print a monthly activity report."
   (let ((title (format "Report for time spent between %s and %s; total of %d days."
                        first-day last-day total-days)))
     (cond ((eq timelog-summary-format 'csv)
-           (generate-time-table-csv time-list title))
+           (timelog--generate-time-table-csv time-list title))
           (t
            (concat
             (format "________________________________\n%s\n\n" title)
-            (generate-time-table time-list)
+            (timelog--generate-time-table time-list)
             (format "________________________________\n"))))))
 
-(defun timelog-add-slashes-to-date (date-string)
+(defun timelog--add-slashes-to-date (date-string)
   (if (= 6 (length date-string))
       (concat (substring date-string 0 4) "/" (substring date-string 4))
     (concat (substring date-string 0 4) "/"
@@ -311,49 +370,73 @@ is a smaller number than START-TIME.
 
 (defun timelog-summarize-day (date-string) ;; YYYYMMDD
   (interactive "sDate [YYYYMMDD]: ")
-  (setq date-string (timelog-add-slashes-to-date date-string))
+  (setq date-string (timelog--add-slashes-to-date date-string))
   (cl-destructuring-bind (start-time stop-time projects)
       (timelog--do-summarize-day date-string)
     (if (null projects)
         (message "No entries for date %s in %s" date-string timeclock-file)
-      (insert (timelog-generate-day-report
+      (insert (timelog--generate-day-report
                date-string start-time stop-time projects)))))
 
 (defun timelog-summarize-today ()
+  "Print a time log summary for today's activities.
+
+LIMITATION: does not include an activity that started yesterday
+            and finished today."
   (interactive)
   (cl-destructuring-bind (_s _m _h day month year . ignored)
       (decode-time)
     (timelog-summarize-day (format "%d%02d%02d" year month day))))
 
 (defun timelog-summarize-month (month-string) ;; YYYYMM
+  "Print a time log summary for activities done in the specified month.
+
+MONTH-STRING format must be \"YYYYMM\". Prompt if not specified.
+
+LIMITATION: does not include an activity that started the day before
+            the beginning of the specified month and ended the first day of
+            the month."
   (interactive "sMonth [YYYYMM]: ")
-  (setq month-string (timelog-add-slashes-to-date month-string))
+  (setq month-string (timelog--add-slashes-to-date month-string))
   (cl-destructuring-bind (start-date stop-date total-days projects)
-      (timelog-do-summarize-month month-string)
+      (timelog--do-summarize-month month-string)
     (if (null projects)
         (message "No entries for month %s in %s" month-string timeclock-file)
-      (insert (timelog-generate-month-report
+      (insert (timelog--generate-month-report
                start-date stop-date total-days projects)))))
 
 (defun timelog-summarize-range (first-day last-day) ;; date-strings
+  "Print a time log for the activity in the days in the specified range.
+
+FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format.
+
+LIMITATION: does not include an activity that started the day before
+            the beginning of the first day and ended the first day."
   (interactive "sFirst date [YYYYMMDD]: \nsLast date [YYYYMMDD]: ")
-  (setq first-day (timelog-add-slashes-to-date first-day))
-  (setq last-day  (timelog-add-slashes-to-date last-day))
+  (setq first-day (timelog--add-slashes-to-date first-day))
+  (setq last-day  (timelog--add-slashes-to-date last-day))
   (cl-destructuring-bind (total-days projects)
-      (timelog-do-summarize-range first-day last-day)
+      (timelog--do-summarize-range first-day last-day)
     (if (null projects)
 	(message "No entries between dates %s and %s" first-day last-day)
-      (insert (timelog-generate-month-report first-day last-day total-days projects)))))
+      (insert (timelog--generate-month-report first-day last-day total-days projects)))))
 
 (defun timelog-summarize-each-day-in-range (first-day last-day) ;; date-strings
+    "Print a time log for the activity of each days in the specified range.
+
+FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format.
+
+LIMITATION: does not include an activities that cross midnight in each of the
+            affected days.  If you burn the midnight oil often this is not the
+            best report!"
   (interactive "sFirst date [YYYYMMDD]: \nsLast date [YYYYMMDD]: ")
-  (setq first-day (timelog-add-slashes-to-date first-day))
-  (setq last-day  (timelog-add-slashes-to-date last-day))
+  (setq first-day (timelog--add-slashes-to-date first-day))
+  (setq last-day  (timelog--add-slashes-to-date last-day))
   (mapcar
    #'(lambda (summary)
        (cl-destructuring-bind (date-string start stop time-list) summary
 	 (insert
-	  (timelog-generate-day-report date-string start stop time-list))))
+	  (timelog--generate-day-report date-string start stop time-list))))
    (mapcar #'(lambda (date-string)
 	       (cons date-string (timelog--do-summarize-day date-string)))
 	   (timelog--get-dates-in-range first-day last-day))))
@@ -380,7 +463,7 @@ is a smaller number than START-TIME.
         (if (null projects)
             (message "No entries for date %s in %s" date-string timeclock-file)
           (message "Total time worked today: %s" (timelog--seconds-to-time
-                                                  (time-list-sum projects))))))))
+                                                  (timelog--time-list-sum projects))))))))
 
 ;;; --------------------------------------------------------------------------
 (provide 'timelog)

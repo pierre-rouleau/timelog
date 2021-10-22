@@ -64,6 +64,19 @@ This code include the following modification over the original code:
     negative time duration for those.  The new code is able to handle time
     periods that cross over midnight, but only once.  The longest time period
     supported is therefore 48 hours less 1 second.
+- The same issue affected counting time for the last project of the day if
+  that project crossed midnight when trying to create a report for a single
+  day.  The new code detects the situation and compute tine for an opened
+  ended project at the end of a day as if it was ending at midnight.  This
+  way a single day report includes that period properly.
+
+- Remaining limitation:
+  - Project activity that begins before the first day of a report and ends at
+    the beginning of that first day is **not** counted in the various reports.
+    The available work-around:
+    - Edit the timelog file and insert 2 lines that terminates a project at
+      23:59:59 of day-1 and starts at 00:0:00 on day 2.  Reload the file.
+
 - Code modifications:
   - Renamed internal functions to timelog--*SOMETHING*
   - Added docstrings to several functions but not all (yet).
