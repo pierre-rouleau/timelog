@@ -1,5 +1,5 @@
 # timelog
-Modernized clone of Markus Flambard timelog gist
+Modernized clone of [Markus Flambard timelog gist](https://gist.github.com/flambard/419770#file-timelog-el).
 
 This evolves timelog:
 - Modernizes the code to byte-compile cleanly under Emacs 26 and later.
