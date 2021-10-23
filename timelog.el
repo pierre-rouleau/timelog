@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-10-22 18:22:25, updated by Pierre Rouleau>
+;; Time-stamp: <2021-10-23 11:15:41, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -41,7 +41,8 @@
 ;; - To ensure that all periods are properly counted the file content is
 ;;   corrected by `timelog--fix-midnight-crossings' before any report is
 ;;   created.  This inserts project termination and start over midnight to
-;;   prevent all possibilities of duration computation errors.
+;;   prevent all possibilities of duration computation errors.  This
+;;   correction is done once per day, which should suffice.
 ;;
 ;;
 ;; Code modifications:
@@ -86,7 +87,7 @@ The choices are:
   "Read and returns the time stamp in seconds of timelog buffer current line."
   (if (and (eobp)
            use-current-time-if-eobp)
-      (timelog--current-time)
+      (timelog--current-time-string)
     (progn
       (forward-char 15)
       (let ((hour (current-word nil t)))
@@ -112,12 +113,25 @@ The choices are:
         (%hours (% total-seconds 3600)))
     (format "%d:%02d:%02d" hours (/ %hours 60) (% %hours 60))))
 
-(defun timelog--current-time ()
+(defun timelog--current-time-string ()
   "Return current time as a number of seconds from the beginning of the day."
   (cl-destructuring-bind (seconds minutes hours &rest ignored) (decode-time)
     (+ seconds (* minutes 60) (* hours 3600))))
 
 (defun timelog--current-date ()
+  "Return a list of day, month, year for today."
+  (cl-destructuring-bind (_s _m _h day month year &rest ignored) (decode-time)
+    (list day month year)))
+
+(defun timelog--date-differ-p (date1 date2)
+  "Return t if DATE1 and DATE2 are the same date, nil otherwise.
+
+Both DATE1 and DATE2 are (day month year) lists."
+  (or  (not (eq (nth 0 date1) (nth 0 date2)))
+       (not (eq (nth 1 date1) (nth 1 date2)))
+       (not (eq (nth 2 date1) (nth 2 date2)))))
+
+(defun timelog--current-date-string ()
   "Return today's date in \"YYYY/MM/DD\" format."
   (cl-destructuring-bind (_s _m _h day month year &rest ignored) (decode-time)
     (format "%4d/%02d/%02d" year month day)))
@@ -203,8 +217,8 @@ otherwise return 86400, which corresponds to the total number of seconds in
 24 hours.rn time of end of day in seconds.
 If DATE-STRING represents today, return the current time in seconds,
 otherwise return 86400, the equivalent of 24 hours."
-  (if (string= date-string (timelog--current-date))
-      (timelog--current-time)
+  (if (string= date-string (timelog--current-date-string))
+      (timelog--current-time-string)
     86400))
 
 (defun timelog--do-summarize-day (date-string)
@@ -390,46 +404,58 @@ o \\([0-9]+/[0-9][0-9]/[0-9][0-9]\\) [0-9][0-9]:[0-9][0-9]:[0-9][0-9]"
 - group 2: name of the project (taken from the in record)
 - group 3: date of the out record following the in record just before.")
 
+(defvar timelog--fix-midnight-crossings-last-run-date nil
+  "Date (day month year) of last `timelog--fix-midnight-crossings' call.")
 
-(defun timelog--fix-midnight-crossings (&optional verbose)
+
+(defun timelog--fix-midnight-crossings (&optional verbose forced)
   "Fix all midnight crossings in the timelog file.
 
 Insert project end in day 1 and start in day 2.
 Save file and reload it if anything changed.
 Return nil if nothing was fixed, otherwise return the number of
-midnight periods fixed."
-  (let ((fix-count 0)
-        (extant-timelog-buffer (find-buffer-visiting timeclock-file)))
-    (with-current-buffer (find-file-noselect timeclock-file t)
-      (save-excursion
-        (save-restriction
-          (goto-char (point-min))
-          (while (not (eobp))
-            (when (and (re-search-forward timelog--in-out-regexp nil :noerror)
-                       (not (string= (match-string 1)
-                                     (match-string 3))))
-              ;; point is toward end of project input that ends next day
-              ;; Insert 2 new lines the end that project
-              (cl-incf fix-count)
-              (move-beginning-of-line 1)
-              (insert (format "o %s 23:59:59\ni %s 00:00:00 %s\n"
-                              (match-string 1)
-                              (match-string 3)
-                              (match-string 2)))))
-          (if (> fix-count 0)
-              (progn
-                (save-buffer)
-                (timeclock-reread-log)
-                (when verbose
-                  (message "Fixed %d midnight crossing issue%s in %s"
-                           fix-count
-                           (if (> fix-count 1)
-                               "s"
-                             "")
-                           timeclock-file)))
-            (setq fix-count nil))))
-      (unless extant-timelog-buffer (kill-buffer (current-buffer))))
-    fix-count))
+midnight periods fixed.
+
+This function executes fully only once a day unless FORCED is set."
+  (when (or forced
+            (null timelog--fix-midnight-crossings-last-run-date)
+            (timelog--date-differ-p
+             timelog--fix-midnight-crossings-last-run-date
+             (timelog--current-date)))
+    (setq timelog--fix-midnight-crossings-last-run-date
+          (timelog--current-date))
+    (let ((fix-count 0)
+          (extant-timelog-buffer (find-buffer-visiting timeclock-file)))
+      (with-current-buffer (find-file-noselect timeclock-file t)
+        (save-excursion
+          (save-restriction
+            (goto-char (point-min))
+            (while (not (eobp))
+              (when (and (re-search-forward timelog--in-out-regexp nil :noerror)
+                         (not (string= (match-string 1)
+                                       (match-string 3))))
+                ;; point is toward end of project input that ends next day
+                ;; Insert 2 new lines the end that project
+                (cl-incf fix-count)
+                (move-beginning-of-line 1)
+                (insert (format "o %s 23:59:59\ni %s 00:00:00 %s\n"
+                                (match-string 1)
+                                (match-string 3)
+                                (match-string 2)))))
+            (if (> fix-count 0)
+                (progn
+                  (save-buffer)
+                  (timeclock-reread-log)
+                  (when verbose
+                    (message "Fixed %d midnight crossing issue%s in %s"
+                             fix-count
+                             (if (> fix-count 1)
+                                 "s"
+                               "")
+                             timeclock-file)))
+              (setq fix-count nil))))
+        (unless extant-timelog-buffer (kill-buffer (current-buffer))))
+      fix-count)))
 
 ;; --
 

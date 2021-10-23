@@ -74,7 +74,8 @@ This code include the following modification over the original code:
   - To ensure that all periods are properly counted the file content is
     corrected by `timelog--fix-midnight-crossings` before any report is
     created.  This inserts project termination and start over midnight to
-    prevent all possibilities of duration computation errors.
+    prevent all possibilities of duration computation errors.  This correction
+    is executed once per day, which should suffice.
 
 The above fixes allow tracking project periods that cross midnight, so you can
 burn the midnight oil and still track your time properly.
