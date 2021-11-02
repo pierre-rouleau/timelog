@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-10-23 11:15:41, updated by Pierre Rouleau>
+;; Time-stamp: <2021-11-02 14:50:20, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -27,6 +27,8 @@
 ;; - The CSV format has 3 filled columns with an extra columns to compute
 ;;   duration in the final spreadsheet.  The CSV has a title row which has a
 ;;   title in the fourth column describing the period.
+;; - The `timelog-open-file' command that opens the `timeclock-file' into the
+;;   current buffer.
 ;;
 ;; Fix:
 ;; - The original code did not handle periods crossing midnight, reporting
@@ -547,6 +549,11 @@ FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format."
             (message "No entries for date %s in %s" date-string timeclock-file)
           (message "Total time worked today: %s" (timelog--seconds-to-time
                                                   (timelog--time-list-sum projects))))))))
+
+(defun timelog-open-file ()
+  "Open the `timeclock-file' in current buffer."
+  (interactive)
+  (find-file timeclock-file))
 
 ;;; --------------------------------------------------------------------------
 (provide 'timelog)
