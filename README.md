@@ -57,9 +57,12 @@ This code include the following modification over the original code:
       duration in the final spreadsheet.  The CSV has a title row which has a
       title in the fourth column describing the period.
   - timelog customization group:
-    - select report format with `timelog-summary-format' which can be the
+    - select report format with **timelog-summary-format** which can be the
       original (called visual for lack of a better word, and is the default),
       and the CSV format.
+  - New command: **timelog-open-file** command that opens the `timeclock-file`
+    into the current buffer.
+  - Add command-specific prompt history for all timelog-summarize commands.
 
 - Code Fix:
   - The original code did not handle periods crossing midnight, reporting
