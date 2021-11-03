@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-11-02 14:50:20, updated by Pierre Rouleau>
+;; Time-stamp: <2021-11-03 15:16:39, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -29,6 +29,7 @@
 ;;   title in the fourth column describing the period.
 ;; - The `timelog-open-file' command that opens the `timeclock-file' into the
 ;;   current buffer.
+;; - Add command-specific prompt history for all timelog-summarize commands.
 ;;
 ;; Fix:
 ;; - The original code did not handle periods crossing midnight, reporting
@@ -133,10 +134,17 @@ Both DATE1 and DATE2 are (day month year) lists."
        (not (eq (nth 1 date1) (nth 1 date2)))
        (not (eq (nth 2 date1) (nth 2 date2)))))
 
-(defun timelog--current-date-string ()
+(defun timelog--current-date-string (&optional format-string)
   "Return today's date in \"YYYY/MM/DD\" format."
   (cl-destructuring-bind (_s _m _h day month year &rest ignored) (decode-time)
-    (format "%4d/%02d/%02d" year month day)))
+    (format (or format-string
+                "%4d/%02d/%02d")
+            year month day)))
+
+(defun timelog--current-month-string ()
+  "Return YYYYMM string representing current month."
+  (cl-destructuring-bind (_s _m _h _day month year &rest ignored) (decode-time)
+    (format "%4d%02d" year month)))
 
 (defun timelog--add-to-time-list (project start-time stop-time time-list)
   "Return an alist of (project . time-spent) for provided arguments.
@@ -461,14 +469,26 @@ This function executes fully only once a day unless FORCED is set."
 
 ;; --
 
-(defun timelog-summarize-day (date-string) ;; YYYYMMDD
-  (interactive "sDate [YYYYMMDD]: ")
-  (setq date-string (timelog--add-slashes-to-date date-string))
+(defun timelog-summarize-day (&optional date-string)
+  "Print a time log summary for the specified date.
+
+The DATE-STRING must be entered using the \"YYYMMDD\" format.
+Use M-n to select today's date.
+Use M-p and then M-n to navigate through prompt history."
+  (interactive)
+  (setq date-string
+        (timelog--add-slashes-to-date
+         (or date-string
+             (read-string "Date [YYYYMMDD]: " nil
+                          'timelog-summarize-day
+                          (timelog--current-date-string "%4d%02d%02d")))))
   (timelog--fix-midnight-crossings :verbose)
   (cl-destructuring-bind (start-time stop-time projects)
       (timelog--do-summarize-day date-string)
     (if (null projects)
-        (message "No entries for date %s in %s" date-string timeclock-file)
+        (message "No entries for date %s in %s"
+                 date-string
+                 timeclock-file)
       (insert (timelog--generate-day-report
                date-string start-time stop-time projects)))))
 
@@ -479,50 +499,85 @@ This function executes fully only once a day unless FORCED is set."
       (decode-time)
     (timelog-summarize-day (format "%d%02d%02d" year month day))))
 
-(defun timelog-summarize-month (month-string) ;; YYYYMM
+(defun timelog-summarize-month (&optional month-string)
   "Print a time log summary for activities done in the specified month.
 
-MONTH-STRING format must be \"YYYYMM\". Prompt if not specified."
-  (interactive "sMonth [YYYYMM]: ")
-  (setq month-string (timelog--add-slashes-to-date month-string))
+MONTH-STRING format must be \"YYYYMM\". Prompt if not specified.
+Use M-n to select this current month.
+Use M-p and then M-n to navigate through prompt history."
+  (interactive)
+  (setq month-string (timelog--add-slashes-to-date
+                      (or month-string
+                          (read-string "Month [YYYYMM]: " nil
+                                       'timelog-summarize-month
+                                       (timelog--current-month-string)))))
   (timelog--fix-midnight-crossings :verbose)
   (cl-destructuring-bind (start-date stop-date total-days projects)
       (timelog--do-summarize-month month-string)
     (if (null projects)
-        (message "No entries for month %s in %s" month-string timeclock-file)
+        (message "No entries for month %s in %s"
+                 month-string
+                 timeclock-file)
       (insert (timelog--generate-month-report
                start-date stop-date total-days projects)))))
 
-(defun timelog-summarize-range (first-day last-day) ;; date-strings
+(defun timelog-summarize-range (&optional first-day last-day)
   "Print a time log for the activity in the days in the specified range.
 
-FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format."
-  (interactive "sFirst date [YYYYMMDD]: \nsLast date [YYYYMMDD]: ")
-  (setq first-day (timelog--add-slashes-to-date first-day))
-  (setq last-day  (timelog--add-slashes-to-date last-day))
+If not specified, prompts for FIRST-DAY and LAST-DAY, which must
+be entered using the \"YYYYMMDD\" format.
+Use M-n to select today's date for the last date.
+Use M-p and then M-n to navigate through prompt history."
+  (interactive)
+  (setq first-day (timelog--add-slashes-to-date
+                   (or first-day
+                       (read-string "First date [YYYYMMDD]: " nil
+                                    'timelog-summarize-date-first)))
+        last-day (timelog--add-slashes-to-date
+                  (or last-day
+                      (read-string "Last date [YYYYMMDD]: " nil
+                                   'timelog-summarize-date-last
+                                   (timelog--current-date-string
+                                    "%4d%02d%02d")))))
   (timelog--fix-midnight-crossings :verbose)
   (cl-destructuring-bind (total-days projects)
       (timelog--do-summarize-range first-day last-day)
     (if (null projects)
-	(message "No entries between dates %s and %s" first-day last-day)
-      (insert (timelog--generate-month-report first-day last-day total-days projects)))))
+        (message "No entries between dates %s and %s"
+                 first-day
+                 last-day)
+      (insert (timelog--generate-month-report first-day
+                                              last-day
+                                              total-days
+                                              projects)))))
 
-(defun timelog-summarize-each-day-in-range (first-day last-day) ;; date-strings
+(defun timelog-summarize-each-day-in-range (&optional first-day last-day)
   "Print a time log for the activity of each days in the specified range.
 
-FIRST-DAY and LAST-DAY must have the \"YYYYMMDD\" format."
-  (interactive "sFirst date [YYYYMMDD]: \nsLast date [YYYYMMDD]: ")
-  (setq first-day (timelog--add-slashes-to-date first-day))
-  (setq last-day  (timelog--add-slashes-to-date last-day))
+Prompts for the first date and the last date, which must be entered using
+the \"YYYYMMDD\" format.
+Use M-n to select today's date for the last date.
+Use M-p and then M-n to navigate through prompt history."
+  (interactive)
+  (setq first-day (timelog--add-slashes-to-date
+                   (or first-day
+                       (read-string "First date [YYYYMMDD]: " nil
+                                    'timelog-summarize-each-day-first)))
+        last-day (timelog--add-slashes-to-date
+                  (or last-day
+                      (read-string "Last date [YYYYMMDD]: " nil
+                                   'timelog-summarize-each-day-last
+                                   (timelog--current-date-string
+                                    "%4d%02d%02d")))))
   (timelog--fix-midnight-crossings :verbose)
   (mapcar
    #'(lambda (summary)
        (cl-destructuring-bind (date-string start stop time-list) summary
-	 (insert
-	  (timelog--generate-day-report date-string start stop time-list))))
+         (insert
+          (timelog--generate-day-report date-string start stop time-list))))
    (mapcar #'(lambda (date-string)
-	       (cons date-string (timelog--do-summarize-day date-string)))
-	   (timelog--get-dates-in-range first-day last-day))))
+               (cons date-string (timelog--do-summarize-day date-string)))
+           (timelog--get-dates-in-range first-day last-day))))
 
 (defun timelog-current-project ()
   "Display the last entry in timelog.  It corresponds to the current project."
