@@ -3,7 +3,7 @@
 ;; Original Author: Markus Flambard in 2009
 ;; Original copy from: https://gist.github.com/flambard/419770#file-timelog-el
 ;; Modified by Pierre Rouleau : use lexical-binding, fixed compiler warnings.
-;; Time-stamp: <2021-11-03 15:16:39, updated by Pierre Rouleau>
+;; Time-stamp: <2023-01-09 22:58:12 EST, updated by Pierre Rouleau>
 
 ;;; --------------------------------------------------------------------------
 ;;; Commentary:
@@ -79,6 +79,11 @@ The choices are:
 
 ;; --
 
+(defun timelog--timelist-cmp (t1 t2)
+  "Compare T1 and T2 timelist entries.
+
+Sort predicate to list in increased order of project name."
+  (string< (car t1) (car t2)))
 
 (defun timelog--read-date ()
   "Read and return the date string on timelog buffer current line."
@@ -349,7 +354,7 @@ The returned value is a list that includes:
                     (concat
                      (format "%11s  %s\n" (timelog--seconds-to-time time) project)
                      table)))
-              (reverse time-list)
+              (reverse (sort time-list (function timelog--timelist-cmp)))
               :initial-value "\n")
    (format "      Total\n")
    (format " ----------\n")
